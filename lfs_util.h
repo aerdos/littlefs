@@ -51,6 +51,7 @@ extern "C"
 // of this, we need to map all 'sizeof' operations in a macro to properly calculate how many (8-bit) bytes are
 // required to be read. This translation has to happen seamlessly between external memory, where bytes are
 // 8-bits, and internal memory where bytes are 16-bits.
+// https://software-dl.ti.com/ccs/esd/documents/sdto_ccs_source-control.html
 #define LFS_SIZEOF(...) (2*sizeof(__VA_ARGS__))
 typedef uint_least8_t uint8_t;
 typedef int_least8_t int8_t;

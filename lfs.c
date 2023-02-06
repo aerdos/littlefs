@@ -1614,11 +1614,7 @@ static int lfs_dir_commitcrc(lfs_t *lfs, struct lfs_commit *commit) {
         uint16_t footer_arr[LFS_SIZEOF(footer)];
         uint16_t *src = (uint16_t *)(&footer);
         for(uint16_t ii = 0; ii < LFS_SIZEOF(footer); ii++) {
-            if(ii % 2 == 0) {
-                footer_arr[ii] = src[ii>>1] & 0x00FF;
-            } else {
-                footer_arr[ii] = (src[ii>>1] & 0xFF00)>>8;
-            }
+            footer_arr[ii] = __byte(src, ii);
         }
 
         err = lfs_bd_prog(lfs,
@@ -3026,7 +3022,7 @@ static int lfs_file_rawopencfg(lfs_t *lfs, lfs_file_t *file,
         tag = lfs_dir_get(lfs, &file->m, LFS_MKTAG(0x700, 0x3ff, 0),
                           LFS_MKTAG(LFS_TYPE_STRUCT, file->id, 8), ctz_arr);
         for(int ii = 0; ii < 2; ii++) {
-            ctz_ptr[ii] = lfs_arr_to_uint32(ctz_arr + (4 * ii));
+            ctz_ptr[ii] = lfs_arr_to_uint32(ctz_arr + (LFS_SIZEOF(uint32_t) * ii));
         }
 #else
         tag = lfs_dir_get(lfs, &file->m, LFS_MKTAG(0x700, 0x3ff, 0),
@@ -4184,12 +4180,8 @@ static int lfs_rawformat(lfs_t *lfs, const struct lfs_config *cfg) {
 #ifdef LFS_C2800
         uint16_t superblock_arr[LFS_SIZEOF(superblock)];
         uint16_t *src = (uint16_t *)(&superblock);
-        for(uint16_t ii = 0; ii < (6*4); ii++) {
-            if(ii % 2 == 0) {
-                superblock_arr[ii] = src[ii>>1] & 0x00FF;
-            } else {
-                superblock_arr[ii] = (src[ii>>1] & 0xFF00)>>8;
-            }
+        for(uint16_t ii = 0; ii < LFS_SIZEOF(superblock); ii++) {
+            superblock_arr[ii] = __byte(src, ii);
         }
 
         err = lfs_dir_commit(lfs, &root, LFS_MKATTRS(
@@ -4273,8 +4265,8 @@ static int lfs_rawmount(lfs_t *lfs, const struct lfs_config *cfg) {
             tag = lfs_dir_get(lfs, &dir, LFS_MKTAG(0x7ff, 0x3ff, 0),
                                 LFS_MKTAG(LFS_TYPE_INLINESTRUCT, 0, LFS_SIZEOF(superblock)),
                                 superblock_arr);
-            for(int ii = 0; ii < 6; ii++) {
-                superblock_ptr[ii] = lfs_arr_to_uint32(superblock_arr + (4 * ii));
+            for(int ii = 0; ii < (LFS_SIZEOF(superblock)/LFS_SIZEOF(uint32_t)); ii++) {
+                superblock_ptr[ii] = lfs_arr_to_uint32(superblock_arr + (LFS_SIZEOF(uint32_t) * ii));
             }
 #else
             tag = lfs_dir_get(lfs, &dir, LFS_MKTAG(0x7ff, 0x3ff, 0),
