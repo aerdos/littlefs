@@ -44,6 +44,22 @@ extern "C"
 {
 #endif
 
+#ifdef LFS_C2800
+// The Texas Instruments C2800 processor has a 16-bit byte instead of an 8-bit byte, this creates many problems.
+// Notably, the C99 standard says that the 'sizeof' operator should return the number of bytes required to store
+// a variable. It works the same, but storing 32-bits of data on the C2800 requires two 16-bit "bytes". Because
+// of this, we need to map all 'sizeof' operations in a macro to properly calculate how many (8-bit) bytes are
+// required to be read. This translation has to happen seamlessly between external memory, where bytes are
+// 8-bits, and internal memory where bytes are 16-bits.
+#define LFS_SIZEOF(...) (2*sizeof(__VA_ARGS__))
+typedef uint_least8_t uint8_t;
+typedef int_least8_t int8_t;
+void lfs_uint32_to_arr(uint32_t val, uint16_t *arr);
+uint32_t lfs_arr_to_uint32(uint16_t *arr);
+#else
+#define LFS_SIZEOF(...) (sizeof(__VA_ARGS__))
+#endif
+
 
 // Macros, may be replaced by system specific wrappers. Arguments to these
 // macros must not have side-effects as the macros can be removed for a smaller
@@ -144,7 +160,7 @@ static inline uint32_t lfs_ctz(uint32_t a) {
 #if !defined(LFS_NO_INTRINSICS) && defined(__GNUC__)
     return __builtin_ctz(a);
 #else
-    return lfs_npw2((a & -a) + 1) - 1;
+    return lfs_npw2((a & ((uint32_t)(-((int32_t)a))) ) + 1) - 1; // NOTE: explicit casting added to allow compilation by C++14 (in addition to C99)
 #endif
 }
 
@@ -167,9 +183,10 @@ static inline int lfs_scmp(uint32_t a, uint32_t b) {
 
 // Convert between 32-bit little-endian and native order
 static inline uint32_t lfs_fromle32(uint32_t a) {
-#if (defined(  BYTE_ORDER  ) && defined(  ORDER_LITTLE_ENDIAN  ) &&   BYTE_ORDER   ==   ORDER_LITTLE_ENDIAN  ) || \
+#if !defined(LFS_NO_INTRINSICS) && ( \
+    (defined(  BYTE_ORDER  ) && defined(  ORDER_LITTLE_ENDIAN  ) &&   BYTE_ORDER   ==   ORDER_LITTLE_ENDIAN  ) || \
     (defined(__BYTE_ORDER  ) && defined(__ORDER_LITTLE_ENDIAN  ) && __BYTE_ORDER   == __ORDER_LITTLE_ENDIAN  ) || \
-    (defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+    (defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__))
     return a;
 #elif !defined(LFS_NO_INTRINSICS) && ( \
     (defined(  BYTE_ORDER  ) && defined(  ORDER_BIG_ENDIAN  ) &&   BYTE_ORDER   ==   ORDER_BIG_ENDIAN  ) || \
@@ -177,11 +194,16 @@ static inline uint32_t lfs_fromle32(uint32_t a) {
     (defined(__BYTE_ORDER__) && defined(__ORDER_BIG_ENDIAN__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__))
     return __builtin_bswap32(a);
 #else
+#ifdef LFS_C2800
+    return a;
+#else
     return (((uint8_t*)&a)[0] <<  0) |
            (((uint8_t*)&a)[1] <<  8) |
            (((uint8_t*)&a)[2] << 16) |
            (((uint8_t*)&a)[3] << 24);
 #endif
+#endif
+
 }
 
 static inline uint32_t lfs_tole32(uint32_t a) {
@@ -195,16 +217,25 @@ static inline uint32_t lfs_frombe32(uint32_t a) {
     (defined(__BYTE_ORDER  ) && defined(__ORDER_LITTLE_ENDIAN  ) && __BYTE_ORDER   == __ORDER_LITTLE_ENDIAN  ) || \
     (defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__))
     return __builtin_bswap32(a);
-#elif (defined(  BYTE_ORDER  ) && defined(  ORDER_BIG_ENDIAN  ) &&   BYTE_ORDER   ==   ORDER_BIG_ENDIAN  ) || \
+#elif !defined(LFS_NO_INTRINSICS) && ( \
+    (defined(  BYTE_ORDER  ) && defined(  ORDER_BIG_ENDIAN  ) &&   BYTE_ORDER   ==   ORDER_BIG_ENDIAN  ) || \
     (defined(__BYTE_ORDER  ) && defined(__ORDER_BIG_ENDIAN  ) && __BYTE_ORDER   == __ORDER_BIG_ENDIAN  ) || \
-    (defined(__BYTE_ORDER__) && defined(__ORDER_BIG_ENDIAN__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
+    (defined(__BYTE_ORDER__) && defined(__ORDER_BIG_ENDIAN__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__))
     return a;
+#else
+#ifdef LFS_C2800
+    return	((0xFF000000 & a)>>24UL) |
+    		((0x00FF0000 & a)>>8UL) |
+			((0x0000FF00 & a)<<8UL) |
+            ((0x000000FF & a)<<24UL);
 #else
     return (((uint8_t*)&a)[0] << 24) |
            (((uint8_t*)&a)[1] << 16) |
            (((uint8_t*)&a)[2] <<  8) |
            (((uint8_t*)&a)[3] <<  0);
 #endif
+#endif
+
 }
 
 static inline uint32_t lfs_tobe32(uint32_t a) {

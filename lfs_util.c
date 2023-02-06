@@ -11,7 +11,7 @@
 #ifndef LFS_CONFIG
 
 
-// Software CRC implementation with small lookup table
+// Software CRC implementation with small lookup table, size is in bytes
 uint32_t lfs_crc(uint32_t crc, const void *buffer, size_t size) {
     static const uint32_t rtable[16] = {
         0x00000000, 0x1db71064, 0x3b6e20c8, 0x26d930ac,
@@ -30,5 +30,17 @@ uint32_t lfs_crc(uint32_t crc, const void *buffer, size_t size) {
     return crc;
 }
 
+#ifdef LFS_C2800
+void lfs_uint32_to_arr(uint32_t val, uint16_t *arr) {
+    arr[3] = ((0xFF000000 & val)>>24UL);
+    arr[2] = ((0x00FF0000 & val)>>16UL);
+    arr[1] = ((0x0000FF00 & val)>>8UL);
+    arr[0] = ((0x000000FF & val)>>0UL);
+}
+
+uint32_t lfs_arr_to_uint32(uint16_t *arr) {
+    return (((uint32_t)arr[3])<<24UL) | (((uint32_t)arr[2])<<16UL) | (((uint32_t)arr[1])<<8UL) | ((uint32_t)arr[0]);
+}
+#endif
 
 #endif
