@@ -1614,7 +1614,7 @@ static int lfs_dir_commitcrc(lfs_t *lfs, struct lfs_commit *commit) {
         uint16_t footer_arr[LFS_SIZEOF(footer)];
         uint16_t *src = (uint16_t *)(&footer);
         for(uint16_t ii = 0; ii < LFS_SIZEOF(footer); ii++) {
-            footer_arr[ii] = __byte(src, ii);
+            footer_arr[ii] = __byte((int *)src, ii);
         }
 
         err = lfs_bd_prog(lfs,
@@ -4181,7 +4181,7 @@ static int lfs_rawformat(lfs_t *lfs, const struct lfs_config *cfg) {
         uint16_t superblock_arr[LFS_SIZEOF(superblock)];
         uint16_t *src = (uint16_t *)(&superblock);
         for(uint16_t ii = 0; ii < LFS_SIZEOF(superblock); ii++) {
-            superblock_arr[ii] = __byte(src, ii);
+            superblock_arr[ii] = __byte((int *)src, ii);
         }
 
         err = lfs_dir_commit(lfs, &root, LFS_MKATTRS(
@@ -5690,23 +5690,28 @@ lfs_ssize_t lfs_file_read(lfs_t *lfs, lfs_file_t *file,
 #ifdef LFS_C2800
     lfs_ssize_t tmp;
     lfs_ssize_t res = 0;
-    lfs_size_t size_bytes = 2 * size;
+    lfs_size_t size_bytes = 2 * size; // 'size' is in native format, 16-bit bytes
     lfs_size_t read_bytes;
     uint32_t off, ii;
-    uint16_t buf[16];
+    uint16_t *buf = lfs_malloc(lfs->cfg->cache_size);
 
     for(off = 0; off < size_bytes && res >= 0; off += ii) {
-        read_bytes = lfs_min(16, size_bytes);
+        read_bytes = lfs_min(lfs->cfg->cache_size, size_bytes);
         tmp = lfs_file_rawread(lfs, file, buf, read_bytes);
         for(ii = 0; ii < tmp; ii++) {
             __byte(buffer, off + ii) = buf[ii];
         }
-        res = (tmp < 0) ? tmp : res + tmp;
+        res = (tmp < 0) ? tmp : res + tmp; // if we don't have an error, add to byte count
 
-        // The file doesn't have as many bytes as we asked for, break
         if (tmp < read_bytes) {
-            break;
+            break; // file doesn't have as many bytes as requested (probably EOF), break
         }
+    }
+
+    lfs_free(buf);
+
+    if (res > 0) {
+        res >>= 1; // convert from 8-bit bytes to native format, 16-bit bytes
     }
 #else
     lfs_ssize_t res = lfs_file_rawread(lfs, file, buffer, size);
@@ -5731,16 +5736,22 @@ lfs_ssize_t lfs_file_write(lfs_t *lfs, lfs_file_t *file,
 #ifdef LFS_C2800
     lfs_ssize_t tmp;
     lfs_ssize_t res = 0;
-    lfs_size_t size_bytes = 2 * size;
+    lfs_size_t size_bytes = 2 * size; // 'size' is in native format, 16-bit bytes
     uint32_t off, ii;
-    uint16_t buf[16];
+    uint16_t *buf = lfs_malloc(lfs->cfg->cache_size);
 
     for(off = 0; off < size_bytes && res >= 0; off += ii) {
-        for(ii = 0; ii < 16 && (off + ii) < size_bytes; ii++) {
+        for(ii = 0; ii < lfs->cfg->cache_size && (off + ii) < size_bytes; ii++) {
             buf[ii] = __byte((int *)buffer, off + ii);
         }
         tmp = lfs_file_rawwrite(lfs, file, buf, ii);
-        res = (tmp < 0) ? tmp : res + tmp;
+        res = (tmp < 0) ? tmp : res + tmp; // if we don't have an error, add to byte count
+    }
+
+    lfs_free(buf);
+
+    if (res > 0) {
+        res >>= 1; // convert from 8-bit bytes to native format, 16-bit bytes
     }
 #else
     lfs_ssize_t res = lfs_file_rawwrite(lfs, file, buffer, size);
@@ -5762,7 +5773,15 @@ lfs_soff_t lfs_file_seek(lfs_t *lfs, lfs_file_t *file,
             (void*)lfs, (void*)file, off, whence);
     LFS_ASSERT(lfs_mlist_isopen(lfs->mlist, (struct lfs_mlist*)file));
 
+#ifdef LFS_C2800
+    lfs_soff_t res = lfs_file_rawseek(lfs, file, off<<1, whence);
+
+    if (res > 0) {
+        res >>= 1; // convert from 8-bit bytes to native format, 16-bit bytes
+    }
+#else
     lfs_soff_t res = lfs_file_rawseek(lfs, file, off, whence);
+#endif
 
     LFS_TRACE("lfs_file_seek -> %"PRId32, res);
     LFS_UNLOCK(lfs->cfg);
@@ -5825,6 +5844,12 @@ lfs_soff_t lfs_file_size(lfs_t *lfs, lfs_file_t *file) {
     LFS_ASSERT(lfs_mlist_isopen(lfs->mlist, (struct lfs_mlist*)file));
 
     lfs_soff_t res = lfs_file_rawsize(lfs, file);
+
+#ifdef LFS_C2800
+    if (res > 0) {
+        res >>= 1; // convert from 8-bit bytes to native format, 16-bit bytes
+    }
+#endif
 
     LFS_TRACE("lfs_file_size -> %"PRId32, res);
     LFS_UNLOCK(lfs->cfg);
